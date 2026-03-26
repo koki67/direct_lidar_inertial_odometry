@@ -21,7 +21,7 @@ def generate_launch_description():
     # Set default arguments
     rviz = LaunchConfiguration('rviz', default='false')
     pointcloud_topic = LaunchConfiguration('pointcloud_topic', default='points_raw')
-    imu_topic = LaunchConfiguration('imu_topic', default='imu_raw')
+    imu_topic = LaunchConfiguration('imu_topic', default='go2w/imu')
 
     # Define arguments
     declare_rviz_arg = DeclareLaunchArgument(
