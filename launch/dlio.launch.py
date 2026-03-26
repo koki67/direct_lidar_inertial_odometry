@@ -20,6 +20,7 @@ def generate_launch_description():
 
     # Set default arguments
     rviz = LaunchConfiguration('rviz', default='false')
+    use_sim_time = LaunchConfiguration('use_sim_time', default='false')
     pointcloud_topic = LaunchConfiguration('pointcloud_topic', default='points_raw')
     imu_topic = LaunchConfiguration('imu_topic', default='go2w/imu')
 
@@ -28,6 +29,11 @@ def generate_launch_description():
         'rviz',
         default_value=rviz,
         description='Launch RViz'
+    )
+    declare_use_sim_time_arg = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value=use_sim_time,
+        description='Use simulated time from /clock'
     )
     declare_pointcloud_topic_arg = DeclareLaunchArgument(
         'pointcloud_topic',
@@ -49,7 +55,7 @@ def generate_launch_description():
         package='direct_lidar_inertial_odometry',
         executable='dlio_odom_node',
         output='screen',
-        parameters=[dlio_yaml_path, dlio_params_yaml_path],
+        parameters=[dlio_yaml_path, dlio_params_yaml_path, {'use_sim_time': use_sim_time}],
         remappings=[
             ('pointcloud', pointcloud_topic),
             ('imu', imu_topic),
@@ -67,7 +73,7 @@ def generate_launch_description():
         package='direct_lidar_inertial_odometry',
         executable='dlio_map_node',
         output='screen',
-        parameters=[dlio_yaml_path, dlio_params_yaml_path],
+        parameters=[dlio_yaml_path, dlio_params_yaml_path, {'use_sim_time': use_sim_time}],
         remappings=[
             ('keyframes', 'dlio/odom_node/pointcloud/keyframe'),
         ],
@@ -80,12 +86,14 @@ def generate_launch_description():
         executable='rviz2',
         name='dlio_rviz',
         arguments=['-d', rviz_config_path],
+        parameters=[{'use_sim_time': use_sim_time}],
         output='screen',
         condition=IfCondition(LaunchConfiguration('rviz'))
     )
 
     return LaunchDescription([
         declare_rviz_arg,
+        declare_use_sim_time_arg,
         declare_pointcloud_topic_arg,
         declare_imu_topic_arg,
         dlio_odom_node,
