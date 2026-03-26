@@ -12,7 +12,7 @@
 
 /**:
   ros__parameters:
-    use_sim_time: true
+    use_sim_time: false
     frames/odom: odom
     frames/baselink: base_link
     frames/lidar: hesai_lidar
@@ -20,7 +20,7 @@
 
     map/waitUntilMove: true
     map/dense/filtered: false
-    map/sparse/leafSize: 0.25
+    map/sparse/leafSize: 0.01
 
     odom/gravity: 9.80665
     odom/computeTimeOffset: true
@@ -31,11 +31,11 @@
     odom/imu/calibration/time: 3.0
     odom/imu/bufferSize: 5000
 
-    odom/preprocessing/cropBoxFilter/size: 1.0
-    odom/preprocessing/voxelFilter/res: 0.25
+    odom/preprocessing/cropBoxFilter/size: 0.4
+    odom/preprocessing/voxelFilter/res: 0.03
 
-    odom/keyframe/threshD: 1.0
-    odom/keyframe/threshR: 45.0
+    odom/keyframe/threshD: 0.4
+    odom/keyframe/threshR: 30.0
 
     odom/submap/keyframe/knn: 10
     odom/submap/keyframe/kcv: 10
