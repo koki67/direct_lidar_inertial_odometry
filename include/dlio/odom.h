@@ -310,6 +310,7 @@ private:
   // Parameters
   std::string version_;
   int num_threads_;
+  bool verbose_;
 
   bool deskew_;
 

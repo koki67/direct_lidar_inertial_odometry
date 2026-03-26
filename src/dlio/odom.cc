@@ -304,9 +304,15 @@ void dlio::OdomNode::getParams() {
   dlio::declare_param(this, "odom/geo/Kgb", this->geo_Kgb_, 1.0);
   dlio::declare_param(this, "odom/geo/abias_max", this->geo_abias_max_, 1.0);
   dlio::declare_param(this, "odom/geo/gbias_max", this->geo_gbias_max_, 1.0);
+
+  this->declare_parameter<bool>("dlio/verbose", true);
+  this->get_parameter("dlio/verbose", this->verbose_);
 }
 
 void dlio::OdomNode::start() {
+  if (!this->verbose_) {
+    return;
+  }
 
   printf("\033[2J\033[1;1H");
   std::cout << std::endl
@@ -849,8 +855,10 @@ void dlio::OdomNode::callbackPointCloud(const sensor_msgs::msg::PointCloud2::Sha
   this->gicp_hasConverged = this->gicp.hasConverged();
 
   // Debug statements and publish custom DLIO message
-  this->debug_thread = std::thread( &dlio::OdomNode::debug, this );
-  this->debug_thread.detach();
+  if (this->verbose_) {
+    this->debug_thread = std::thread( &dlio::OdomNode::debug, this );
+    this->debug_thread.detach();
+  }
 
   this->geo.first_opt_done = true;
 
