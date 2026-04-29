@@ -12,6 +12,7 @@
 
 #include "dlio/odom.h"
 #include "dlio/utils.h"
+#include "direct_lidar_inertial_odometry/srv/reset_map.hpp"
 
 #include <queue>
 
@@ -52,8 +53,15 @@ dlio::OdomNode::OdomNode() : Node("dlio_odom_node") {
 
   this->br = std::make_shared<tf2_ros::TransformBroadcaster>(*this);
 
-  this->publish_timer = this->create_wall_timer(std::chrono::duration<double>(0.01), 
+  this->publish_timer = this->create_wall_timer(std::chrono::duration<double>(0.01),
       std::bind(&dlio::OdomNode::publishPose, this));
+
+  auto reset_cb_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  this->reset_srv = this->create_service<direct_lidar_inertial_odometry::srv::ResetMap>(
+      "reset_map",
+      std::bind(&dlio::OdomNode::resetMap, this, std::placeholders::_1, std::placeholders::_2),
+      rmw_qos_profile_services_default,
+      reset_cb_group);
 
   this->T = Eigen::Matrix4f::Identity();
   this->T_prior = Eigen::Matrix4f::Identity();
@@ -1808,6 +1816,107 @@ void dlio::OdomNode::buildKeyframesAndSubmap(State vehicle_state) {
 void dlio::OdomNode::pauseSubmapBuildIfNeeded() {
   std::unique_lock<decltype(this->main_loop_running_mutex)> lock(this->main_loop_running_mutex);
   this->submap_build_cv.wait(lock, [this]{ return !this->main_loop_running; });
+}
+
+void dlio::OdomNode::resetMap(std::shared_ptr<direct_lidar_inertial_odometry::srv::ResetMap::Request> req,
+                               std::shared_ptr<direct_lidar_inertial_odometry::srv::ResetMap::Response> res) {
+  reset();
+  res->success = true;
+}
+
+void dlio::OdomNode::reset() {
+  // Clear trajectory
+  this->trajectory.clear();
+  this->length_traversed = 0.;
+
+  // Clear keyframes and associated data
+  {
+    std::lock_guard<std::mutex> lock(this->keyframes_mutex);
+    this->keyframes.clear();
+    this->keyframe_timestamps.clear();
+    this->keyframe_normals.clear();
+    this->keyframe_transformations.clear();
+  }
+
+  // Clear path and keyframe pose messages
+  this->path_ros.poses.clear();
+  this->kf_pose_ros.poses.clear();
+
+  // Reset state vector to origin
+  this->state.p = Eigen::Vector3f(0., 0., 0.);
+  this->state.q = Eigen::Quaternionf(1., 0., 0., 0.);
+  this->state.v.lin.b.setZero();
+  this->state.v.lin.w.setZero();
+  this->state.v.ang.b.setZero();
+  this->state.v.ang.w.setZero();
+
+  // Reset biases
+  this->state.b.accel.setZero();
+  this->state.b.gyro.setZero();
+
+  // Reset transforms
+  this->T = Eigen::Matrix4f::Identity();
+  this->T_prior = Eigen::Matrix4f::Identity();
+  this->T_corr = Eigen::Matrix4f::Identity();
+  this->origin = Eigen::Vector3f(0., 0., 0.);
+
+  // Reset pose tracking
+  this->lidarPose.p.setZero();
+  this->lidarPose.q = Eigen::Quaternionf(1., 0., 0., 0.);
+  this->imu_meas.stamp = 0.;
+  this->imu_meas.ang_vel.setZero();
+  this->imu_meas.lin_accel.setZero();
+
+  // Clear IMU buffer
+  {
+    std::lock_guard<std::mutex> lock(this->mtx_imu);
+    this->imu_buffer.clear();
+  }
+
+  // Reset flags
+  this->dlio_initialized = false;
+  this->first_valid_scan = false;
+  this->first_imu_received = false;
+  if (this->imu_calibrate_) { this->imu_calibrated = false; }
+  else { this->imu_calibrated = true; }
+
+  // Reset submap state
+  this->num_processed_keyframes = 0;
+  this->submap_hasChanged = true;
+  this->submap_kf_idx_prev.clear();
+  this->submap_kf_idx_curr.clear();
+  this->new_submap_is_ready = false;
+
+  // Reset timestamps
+  this->first_scan_stamp = 0.;
+  this->prev_scan_stamp = 0.;
+  this->scan_stamp = 0.;
+  this->elapsed_time = 0.;
+  this->first_imu_stamp = 0.;
+  this->prev_imu_stamp = 0.;
+
+  // Reset metrics history
+  this->comp_times.clear();
+  this->imu_rates.clear();
+  this->lidar_rates.clear();
+  this->cpu_percents.clear();
+  this->metrics.spaciousness.clear();
+  this->metrics.density.clear();
+  this->metrics.spaciousness.push_back(0.);
+  this->metrics.density.push_back(this->gicp_max_corr_dist_);
+
+  // Reset GICP and geometric observer
+  this->geo.first_opt_done = false;
+  this->geo.prev_vel.setZero();
+  this->gicp_hasConverged = false;
+
+  pcl::Registration<PointType, PointType>::KdTreeReciprocalPtr temp;
+  this->gicp.setSearchMethodSource(temp, true);
+  this->gicp.setSearchMethodTarget(temp, true);
+  this->gicp_temp.setSearchMethodSource(temp, true);
+  this->gicp_temp.setSearchMethodTarget(temp, true);
+
+  RCLCPP_INFO(this->get_logger(), "D-LIO odometry node state reset.");
 }
 
 void dlio::OdomNode::debug() {

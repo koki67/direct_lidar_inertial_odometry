@@ -46,6 +46,7 @@ public:
   ~OdomNode();
 
   void start();
+  void reset();
 
 private:
 
@@ -125,6 +126,9 @@ private:
 
   // TF
   std::shared_ptr<tf2_ros::TransformBroadcaster> br;
+
+  // Services
+  rclcpp::Service<direct_lidar_inertial_odometry::srv::ResetMap>::SharedPtr reset_srv;
 
   // ROS Msgs
   nav_msgs::msg::Odometry odom_ros;

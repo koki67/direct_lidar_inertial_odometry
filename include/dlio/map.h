@@ -30,6 +30,7 @@ public:
   ~MapNode();
 
   void start();
+  void reset();
 
 private:
 
@@ -40,11 +41,15 @@ private:
   void savePCD(std::shared_ptr<direct_lidar_inertial_odometry::srv::SavePCD::Request> req,
                std::shared_ptr<direct_lidar_inertial_odometry::srv::SavePCD::Response> res);
 
+  void resetMap(std::shared_ptr<direct_lidar_inertial_odometry::srv::ResetMap::Request> req,
+                std::shared_ptr<direct_lidar_inertial_odometry::srv::ResetMap::Response> res);
+
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr keyframe_sub;
   rclcpp::CallbackGroup::SharedPtr keyframe_cb_group, save_pcd_cb_group;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr map_pub;
 
+  rclcpp::Service<direct_lidar_inertial_odometry::srv::ResetMap>::SharedPtr reset_srv;
   rclcpp::Service<direct_lidar_inertial_odometry::srv::SavePCD>::SharedPtr save_pcd_srv;
 
   pcl::PointCloud<PointType>::Ptr dlio_map;

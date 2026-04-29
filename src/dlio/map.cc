@@ -12,6 +12,7 @@
 
 #include "dlio/map.h"
 #include "dlio/utils.h"
+#include "direct_lidar_inertial_odometry/srv/reset_map.hpp"
 
 dlio::MapNode::MapNode(): Node("dlio_map_node") {
 
@@ -28,6 +29,10 @@ dlio::MapNode::MapNode(): Node("dlio_map_node") {
   this->save_pcd_cb_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   this->save_pcd_srv = this->create_service<direct_lidar_inertial_odometry::srv::SavePCD>("save_pcd",
       std::bind(&dlio::MapNode::savePCD, this, std::placeholders::_1, std::placeholders::_2), rmw_qos_profile_services_default, this->save_pcd_cb_group);
+
+  auto reset_cb_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  this->reset_srv = this->create_service<direct_lidar_inertial_odometry::srv::ResetMap>("reset_map",
+      std::bind(&dlio::MapNode::resetMap, this, std::placeholders::_1, std::placeholders::_2), rmw_qos_profile_services_default, reset_cb_group);
 
   this->dlio_map = std::make_shared<pcl::PointCloud<PointType>>();
 
@@ -99,4 +104,16 @@ void dlio::MapNode::savePCD(std::shared_ptr<direct_lidar_inertial_odometry::srv:
   } else {
     std::cout << "failed" << std::endl;
   }
+}
+
+void dlio::MapNode::resetMap(std::shared_ptr<direct_lidar_inertial_odometry::srv::ResetMap::Request> req,
+                              std::shared_ptr<direct_lidar_inertial_odometry::srv::ResetMap::Response> res) {
+  reset();
+  res->success = true;
+}
+
+void dlio::MapNode::reset() {
+  // Clear the accumulated map cloud
+  this->dlio_map = std::make_shared<pcl::PointCloud<PointType>>();
+  RCLCPP_INFO(this->get_logger(), "D-LIO map node state reset.");
 }

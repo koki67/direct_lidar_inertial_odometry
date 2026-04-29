@@ -36,8 +36,9 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 rosidl_generate_interfaces(
     ${PROJECT_NAME}
+        srv/ResetMap.srv
         srv/SavePCD.srv
-    DEPENDENCIES       
+    DEPENDENCIES
 )
 rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} rosidl_typesupport_cpp)
