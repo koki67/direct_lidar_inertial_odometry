@@ -14,6 +14,7 @@
 
 // ROS
 #include "rclcpp/rclcpp.hpp"
+#include "direct_lidar_inertial_odometry/srv/reset_map.hpp"
 #include <nav_msgs/msg/odometry.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
@@ -59,6 +60,9 @@ private:
   void callbackImu(const sensor_msgs::msg::Imu::SharedPtr imu);
 
   void publishPose();
+
+  void resetMap(std::shared_ptr<direct_lidar_inertial_odometry::srv::ResetMap::Request> req,
+                std::shared_ptr<direct_lidar_inertial_odometry::srv::ResetMap::Response> res);
 
   void publishToROS(pcl::PointCloud<PointType>::ConstPtr published_cloud, Eigen::Matrix4f T_cloud);
   void publishCloud(pcl::PointCloud<PointType>::ConstPtr published_cloud, Eigen::Matrix4f T_cloud);

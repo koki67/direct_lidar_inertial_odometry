@@ -14,6 +14,7 @@
 
 // ROS
 #include "rclcpp/rclcpp.hpp"
+#include "direct_lidar_inertial_odometry/srv/reset_map.hpp"
 #include "direct_lidar_inertial_odometry/srv/save_pcd.hpp"
 #include <sensor_msgs/msg/point_cloud2.hpp>
 

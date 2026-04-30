@@ -66,7 +66,7 @@ ament_target_dependencies(nano_gicp)
 
 # Odometry Node
 add_executable(dlio_odom_node src/dlio/odom_node.cc src/dlio/odom.cc)
-target_link_libraries(dlio_odom_node ${PCL_LIBRARIES} ${OpenMP_LIBS} Threads::Threads nano_gicp)
+target_link_libraries(dlio_odom_node ${PCL_LIBRARIES} ${OpenMP_LIBS} Threads::Threads nano_gicp ${cpp_typesupport_target})
 ament_target_dependencies(dlio_odom_node "tf2_ros" "pcl_ros" "nav_msgs" "pcl_conversions" "rclcpp" "sensor_msgs" "geometry_msgs")
 
 # Mapping Node
