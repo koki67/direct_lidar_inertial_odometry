@@ -9,8 +9,9 @@
 #
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.conditions import IfCondition   
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -49,6 +50,18 @@ def generate_launch_description():
     # Load parameters
     dlio_yaml_path = PathJoinSubstitution([current_pkg, 'cfg', 'dlio.yaml'])
     dlio_params_yaml_path = PathJoinSubstitution([current_pkg, 'cfg', 'params.yaml'])
+
+    # Sensor drivers
+    hesai_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([FindPackageShare('hesai_lidar'), 'launch', 'hesai_lidar_launch.py'])
+        ])
+    )
+    imu_publisher_node = Node(
+        package='go2w_imu_publisher',
+        executable='imu_publisher',
+        output='screen',
+    )
 
     # DLIO Odometry Node
     dlio_odom_node = Node(
@@ -96,6 +109,8 @@ def generate_launch_description():
         declare_use_sim_time_arg,
         declare_pointcloud_topic_arg,
         declare_imu_topic_arg,
+        hesai_launch,
+        imu_publisher_node,
         dlio_odom_node,
         dlio_map_node,
         rviz_node
