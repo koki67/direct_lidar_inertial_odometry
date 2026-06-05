@@ -24,6 +24,7 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
     pointcloud_topic = LaunchConfiguration('pointcloud_topic', default='points_raw')
     imu_topic = LaunchConfiguration('imu_topic', default='go2w/imu')
+    launch_drivers = LaunchConfiguration('launch_drivers', default='true')
 
     # Define arguments
     declare_rviz_arg = DeclareLaunchArgument(
@@ -46,6 +47,11 @@ def generate_launch_description():
         default_value=imu_topic,
         description='IMU topic name'
     )
+    declare_launch_drivers_arg = DeclareLaunchArgument(
+        'launch_drivers',
+        default_value=launch_drivers,
+        description='Launch live LiDAR and IMU drivers'
+    )
 
     # Load parameters
     dlio_yaml_path = PathJoinSubstitution([current_pkg, 'cfg', 'dlio.yaml'])
@@ -55,12 +61,14 @@ def generate_launch_description():
     hesai_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([FindPackageShare('hesai_lidar'), 'launch', 'hesai_lidar_launch.py'])
-        ])
+        ]),
+        condition=IfCondition(launch_drivers)
     )
     imu_publisher_node = Node(
         package='go2w_imu_publisher',
         executable='imu_publisher',
         output='screen',
+        condition=IfCondition(launch_drivers)
     )
 
     # DLIO Odometry Node
@@ -109,6 +117,7 @@ def generate_launch_description():
         declare_use_sim_time_arg,
         declare_pointcloud_topic_arg,
         declare_imu_topic_arg,
+        declare_launch_drivers_arg,
         hesai_launch,
         imu_publisher_node,
         dlio_odom_node,
