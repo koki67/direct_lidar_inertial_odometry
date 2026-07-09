@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -88,10 +88,29 @@ def _static_transform_node(name, parent_frame, child_frame, translation, quatern
     )
 
 
-def generate_launch_description():
+def _resolve_config_path(raw_path, pkg):
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+
+    package_relative = pkg / path
+    if package_relative.exists():
+        return package_relative
+
+    return pkg / "cfg" / path
+
+
+def _sanitize_node_name(value):
+    return "".join(ch if ch.isalnum() else "_" for ch in value).strip("_") or "frame"
+
+
+def _launch_setup(context, *args, **kwargs):
     pkg = Path(get_package_share_directory("direct_lidar_inertial_odometry"))
-    params = _ros_parameters(pkg / "cfg" / "params.yaml")
-    dlio = _ros_parameters(pkg / "cfg" / "dlio.yaml")
+    params_path = _resolve_config_path(LaunchConfiguration("params_config").perform(context), pkg)
+    dlio_path = _resolve_config_path(LaunchConfiguration("dlio_config").perform(context), pkg)
+
+    params = _ros_parameters(params_path)
+    dlio = _ros_parameters(dlio_path)
 
     base_frame = params.get("frames/baselink", "base_link")
     imu_frame = params.get("frames/imu", "imu_link")
@@ -101,7 +120,7 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
 
     imu_tf = _static_transform_node(
-        "base_link_to_imu_link",
+        f"{_sanitize_node_name(base_frame)}_to_{_sanitize_node_name(imu_frame)}",
         base_frame,
         imu_frame,
         _vector(dlio, "extrinsics/baselink2imu/t", 3),
@@ -109,7 +128,7 @@ def generate_launch_description():
         use_sim_time,
     )
     lidar_tf = _static_transform_node(
-        "base_link_to_hesai_lidar",
+        f"{_sanitize_node_name(base_frame)}_to_{_sanitize_node_name(lidar_frame)}",
         base_frame,
         lidar_frame,
         _vector(dlio, "extrinsics/baselink2lidar/t", 3),
@@ -127,6 +146,12 @@ def generate_launch_description():
         condition=IfCondition(use_rviz),
     )
 
+    return [imu_tf, lidar_tf, rviz]
+
+
+def generate_launch_description():
+    pkg = Path(get_package_share_directory("direct_lidar_inertial_odometry"))
+
     return LaunchDescription([
         DeclareLaunchArgument(
             "use_rviz",
@@ -138,7 +163,15 @@ def generate_launch_description():
             default_value="false",
             description="Use simulated time for visualization nodes.",
         ),
-        imu_tf,
-        lidar_tf,
-        rviz,
+        DeclareLaunchArgument(
+            "dlio_config",
+            default_value=str(pkg / "cfg" / "dlio.yaml"),
+            description="D-LIO calibration/intrinsics parameter file.",
+        ),
+        DeclareLaunchArgument(
+            "params_config",
+            default_value=str(pkg / "cfg" / "params.yaml"),
+            description="D-LIO runtime/frame parameter file.",
+        ),
+        OpaqueFunction(function=_launch_setup),
     ])

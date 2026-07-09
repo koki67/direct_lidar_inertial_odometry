@@ -25,6 +25,8 @@ def generate_launch_description():
     pointcloud_topic = LaunchConfiguration('pointcloud_topic', default='points_raw')
     imu_topic = LaunchConfiguration('imu_topic', default='go2w/imu')
     launch_drivers = LaunchConfiguration('launch_drivers', default='true')
+    dlio_config = LaunchConfiguration('dlio_config')
+    params_config = LaunchConfiguration('params_config')
 
     # Define arguments
     declare_rviz_arg = DeclareLaunchArgument(
@@ -52,10 +54,16 @@ def generate_launch_description():
         default_value=launch_drivers,
         description='Launch live LiDAR and IMU drivers'
     )
-
-    # Load parameters
-    dlio_yaml_path = PathJoinSubstitution([current_pkg, 'cfg', 'dlio.yaml'])
-    dlio_params_yaml_path = PathJoinSubstitution([current_pkg, 'cfg', 'params.yaml'])
+    declare_dlio_config_arg = DeclareLaunchArgument(
+        'dlio_config',
+        default_value=PathJoinSubstitution([current_pkg, 'cfg', 'dlio.yaml']),
+        description='D-LIO calibration/intrinsics parameter file'
+    )
+    declare_params_config_arg = DeclareLaunchArgument(
+        'params_config',
+        default_value=PathJoinSubstitution([current_pkg, 'cfg', 'params.yaml']),
+        description='D-LIO runtime/frame parameter file'
+    )
 
     # Sensor drivers
     hesai_launch = IncludeLaunchDescription(
@@ -76,7 +84,7 @@ def generate_launch_description():
         package='direct_lidar_inertial_odometry',
         executable='dlio_odom_node',
         output='screen',
-        parameters=[dlio_yaml_path, dlio_params_yaml_path, {'use_sim_time': use_sim_time}],
+        parameters=[dlio_config, params_config, {'use_sim_time': use_sim_time}],
         remappings=[
             ('pointcloud', pointcloud_topic),
             ('imu', imu_topic),
@@ -94,7 +102,7 @@ def generate_launch_description():
         package='direct_lidar_inertial_odometry',
         executable='dlio_map_node',
         output='screen',
-        parameters=[dlio_yaml_path, dlio_params_yaml_path, {'use_sim_time': use_sim_time}],
+        parameters=[dlio_config, params_config, {'use_sim_time': use_sim_time}],
         remappings=[
             ('keyframes', 'dlio/odom_node/pointcloud/keyframe'),
         ],
@@ -118,6 +126,8 @@ def generate_launch_description():
         declare_pointcloud_topic_arg,
         declare_imu_topic_arg,
         declare_launch_drivers_arg,
+        declare_dlio_config_arg,
+        declare_params_config_arg,
         hesai_launch,
         imu_publisher_node,
         dlio_odom_node,
