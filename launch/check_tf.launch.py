@@ -113,7 +113,7 @@ def _launch_setup(context, *args, **kwargs):
     dlio = _ros_parameters(dlio_path)
 
     base_frame = params.get("frames/baselink", "base_link")
-    imu_frame = params.get("frames/imu", "imu_link")
+    imu_frame = params.get("frames/imu", "imu")
     lidar_frame = params.get("frames/lidar", "hesai_lidar")
 
     use_rviz = LaunchConfiguration("use_rviz")

@@ -34,8 +34,8 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/Axes
       Enabled: true
-      Name: imu_link
-      Reference Frame: imu_link
+      Name: imu
+      Reference Frame: imu
       Length: 0.3
       Radius: 0.025
       Show Trail: false
