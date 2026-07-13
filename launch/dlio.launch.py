@@ -22,6 +22,7 @@ def generate_launch_description():
     # Set default arguments
     rviz = LaunchConfiguration('rviz', default='false')
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
+    offline_replay = LaunchConfiguration('offline_replay', default='false')
     pointcloud_topic = LaunchConfiguration('pointcloud_topic', default='points_raw')
     imu_topic = LaunchConfiguration('imu_topic', default='go2w/imu')
     launch_drivers = LaunchConfiguration('launch_drivers', default='true')
@@ -38,6 +39,11 @@ def generate_launch_description():
         'use_sim_time',
         default_value=use_sim_time,
         description='Use simulated time from /clock'
+    )
+    declare_offline_replay_arg = DeclareLaunchArgument(
+        'offline_replay',
+        default_value=offline_replay,
+        description='Use deterministic, reliable input handling for offline bag replay'
     )
     declare_pointcloud_topic_arg = DeclareLaunchArgument(
         'pointcloud_topic',
@@ -84,7 +90,10 @@ def generate_launch_description():
         package='direct_lidar_inertial_odometry',
         executable='dlio_odom_node',
         output='screen',
-        parameters=[dlio_config, params_config, {'use_sim_time': use_sim_time}],
+        parameters=[dlio_config, params_config, {
+            'use_sim_time': use_sim_time,
+            'offline/replay': offline_replay,
+        }],
         remappings=[
             ('pointcloud', pointcloud_topic),
             ('imu', imu_topic),
@@ -123,6 +132,7 @@ def generate_launch_description():
     return LaunchDescription([
         declare_rviz_arg,
         declare_use_sim_time_arg,
+        declare_offline_replay_arg,
         declare_pointcloud_topic_arg,
         declare_imu_topic_arg,
         declare_launch_drivers_arg,

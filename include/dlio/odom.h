@@ -143,12 +143,18 @@ private:
   // Flags
   std::atomic<bool> dlio_initialized;
   std::atomic<bool> first_valid_scan;
-  std::atomic<bool> first_imu_received;
   std::atomic<bool> imu_calibrated;
+  std::atomic<bool> first_imu_received;
   std::atomic<bool> submap_hasChanged;
   std::atomic<bool> gicp_hasConverged;
   std::atomic<bool> deskew_status;
   std::atomic<int> deskew_size;
+  std::atomic<unsigned long long> replay_imu_received;
+  std::atomic<unsigned long long> replay_pointcloud_received;
+  double replay_first_imu_stamp;
+  double replay_last_imu_stamp;
+  double replay_first_pointcloud_stamp;
+  double replay_last_pointcloud_stamp;
 
   // Threads
   std::thread publish_thread;
@@ -349,6 +355,7 @@ private:
   double vf_res_;
 
   bool imu_calibrate_;
+  bool offline_replay_;
   bool calibrate_gyro_;
   bool calibrate_accel_;
   bool gravity_align_;

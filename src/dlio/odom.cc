@@ -31,6 +31,12 @@ dlio::OdomNode::OdomNode() : Node("dlio_odom_node") {
   else {this->imu_calibrated = true;}
   this->deskew_status = false;
   this->deskew_size = 0;
+  this->replay_imu_received = 0;
+  this->replay_pointcloud_received = 0;
+  this->replay_first_imu_stamp = 0.;
+  this->replay_last_imu_stamp = 0.;
+  this->replay_first_pointcloud_stamp = 0.;
+  this->replay_last_pointcloud_stamp = 0.;
 
   this->lidar_cb_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   auto lidar_sub_opt = rclcpp::SubscriptionOptions();
@@ -41,7 +47,14 @@ dlio::OdomNode::OdomNode() : Node("dlio_odom_node") {
   this->imu_cb_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   auto imu_sub_opt = rclcpp::SubscriptionOptions();
   imu_sub_opt.callback_group = this->imu_cb_group;
-  this->imu_sub = this->create_subscription<sensor_msgs::msg::Imu>("imu", rclcpp::SensorDataQoS(),
+  auto imu_qos = rclcpp::SensorDataQoS();
+  if (this->offline_replay_) {
+    // The recorded raw inputs are reliable. Preserve that delivery contract
+    // during offline replay after the player/D-LIO startup barrier.
+    imu_qos.keep_last(1000);
+    imu_qos.reliable();
+  }
+  this->imu_sub = this->create_subscription<sensor_msgs::msg::Imu>("imu", imu_qos,
       std::bind(&dlio::OdomNode::callbackImu, this, std::placeholders::_1), imu_sub_opt);
 
   this->odom_pub     = this->create_publisher<nav_msgs::msg::Odometry>("odom", 1);
@@ -183,12 +196,27 @@ dlio::OdomNode::OdomNode() : Node("dlio_odom_node") {
 
 }
 
-dlio::OdomNode::~OdomNode() {}
+dlio::OdomNode::~OdomNode() {
+  if (!this->offline_replay_) {
+    return;
+  }
+
+  std::cout << std::endl << " D-LIO replay input summary:" << std::endl;
+  std::cout << "  IMU received: " << this->replay_imu_received
+            << " (first: " << this->replay_first_imu_stamp
+            << ", last: " << this->replay_last_imu_stamp << ")" << std::endl;
+  std::cout << "  Point clouds received: " << this->replay_pointcloud_received
+            << " (first: " << this->replay_first_pointcloud_stamp
+            << ", last: " << this->replay_last_pointcloud_stamp << ")" << std::endl;
+}
 
 void dlio::OdomNode::getParams() {
 
   // Version
   dlio::declare_param(this, "version", this->version_, "0.0.0");
+
+  // Offline replay
+  dlio::declare_param(this, "offline/replay", this->offline_replay_, false);
 
   // Frames
   dlio::declare_param(this, "frames/odom", this->odom_frame, "odom");
@@ -775,9 +803,17 @@ void dlio::OdomNode::callbackPointCloud(const sensor_msgs::msg::PointCloud2::Sha
   lock.unlock();
 
   double then = this->now().seconds();
+  const double pointcloud_stamp = rclcpp::Time(pc->header.stamp).seconds();
+
+  if (this->offline_replay_) {
+    if (this->replay_pointcloud_received.fetch_add(1) == 0) {
+      this->replay_first_pointcloud_stamp = pointcloud_stamp;
+    }
+    this->replay_last_pointcloud_stamp = pointcloud_stamp;
+  }
 
   if (this->first_scan_stamp == 0.) {
-    this->first_scan_stamp = rclcpp::Time(pc->header.stamp).seconds();
+    this->first_scan_stamp = pointcloud_stamp;
   }
 
   // DLIO Initialization procedures (IMU calib, gravity align)
@@ -801,8 +837,12 @@ void dlio::OdomNode::callbackPointCloud(const sensor_msgs::msg::PointCloud2::Sha
   }
 
   // Compute Metrics
-  this->metrics_thread = std::thread( &dlio::OdomNode::computeMetrics, this );
-  this->metrics_thread.detach();
+  if (this->offline_replay_) {
+    this->computeMetrics();
+  } else {
+    this->metrics_thread = std::thread( &dlio::OdomNode::computeMetrics, this );
+    this->metrics_thread.detach();
+  }
 
   // Set Adaptive Parameters
   if (this->adaptive_params_) {
@@ -879,6 +919,13 @@ void dlio::OdomNode::callbackImu(const sensor_msgs::msg::Imu::SharedPtr imu_raw)
   sensor_msgs::msg::Imu::SharedPtr imu = this->transformImu( imu_raw );
   this->imu_stamp = imu->header.stamp;
   double imu_stamp_secs = rclcpp::Time(imu->header.stamp).seconds();
+
+  if (this->offline_replay_) {
+    if (this->replay_imu_received.fetch_add(1) == 0) {
+      this->replay_first_imu_stamp = imu_stamp_secs;
+    }
+    this->replay_last_imu_stamp = imu_stamp_secs;
+  }
 
   Eigen::Vector3f lin_accel;
   Eigen::Vector3f ang_vel;
@@ -1894,6 +1941,15 @@ void dlio::OdomNode::reset() {
   this->elapsed_time = 0.;
   this->first_imu_stamp = 0.;
   this->prev_imu_stamp = 0.;
+
+  if (this->offline_replay_) {
+    this->replay_imu_received = 0;
+    this->replay_pointcloud_received = 0;
+    this->replay_first_imu_stamp = 0.;
+    this->replay_last_imu_stamp = 0.;
+    this->replay_first_pointcloud_stamp = 0.;
+    this->replay_last_pointcloud_stamp = 0.;
+  }
 
   // Reset metrics history
   this->comp_times.clear();
