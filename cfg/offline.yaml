@@ -1,0 +1,13 @@
+/**:
+  ros__parameters:
+    # Persist only the outputs needed to reconstruct the final map and the
+    # mapping animation. Defaults in the regular profiles remain unchanged.
+    offline/eventDrivenOdometry: true
+    map/waitUntilMove: false
+    publish/odom: true
+    publish/pose: false
+    publish/path: false
+    publish/keyframes: false
+    publish/deskewed: true
+    publish/tf: false
+    dlio/verbose: false

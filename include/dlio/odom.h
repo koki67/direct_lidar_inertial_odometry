@@ -356,6 +356,13 @@ private:
 
   bool imu_calibrate_;
   bool offline_replay_;
+  bool event_driven_odometry_;
+  bool publish_odom_;
+  bool publish_pose_;
+  bool publish_path_;
+  bool publish_keyframes_;
+  bool publish_deskewed_;
+  bool publish_tf_;
   bool calibrate_gyro_;
   bool calibrate_accel_;
   bool gravity_align_;

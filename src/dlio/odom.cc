@@ -64,10 +64,15 @@ dlio::OdomNode::OdomNode() : Node("dlio_odom_node") {
   this->kf_cloud_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("kf_cloud", 1);
   this->deskewed_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("deskewed", 1);
 
-  this->br = std::make_shared<tf2_ros::TransformBroadcaster>(*this);
+  if (this->publish_tf_) {
+    this->br = std::make_shared<tf2_ros::TransformBroadcaster>(*this);
+  }
 
-  this->publish_timer = this->create_wall_timer(std::chrono::duration<double>(0.01),
-      std::bind(&dlio::OdomNode::publishPose, this));
+  if ((this->publish_odom_ || this->publish_pose_) &&
+      !this->event_driven_odometry_) {
+    this->publish_timer = this->create_wall_timer(std::chrono::duration<double>(0.01),
+        std::bind(&dlio::OdomNode::publishPose, this));
+  }
 
   auto reset_cb_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   this->reset_srv = this->create_service<direct_lidar_inertial_odometry::srv::ResetMap>(
@@ -217,6 +222,17 @@ void dlio::OdomNode::getParams() {
 
   // Offline replay
   dlio::declare_param(this, "offline/replay", this->offline_replay_, false);
+  dlio::declare_param(this, "offline/eventDrivenOdometry",
+                      this->event_driven_odometry_, false);
+
+  // Output controls. Defaults preserve the interactive D-LIO behavior. The
+  // dedicated offline workflow disables outputs that are not persisted.
+  dlio::declare_param(this, "publish/odom", this->publish_odom_, true);
+  dlio::declare_param(this, "publish/pose", this->publish_pose_, true);
+  dlio::declare_param(this, "publish/path", this->publish_path_, true);
+  dlio::declare_param(this, "publish/keyframes", this->publish_keyframes_, true);
+  dlio::declare_param(this, "publish/deskewed", this->publish_deskewed_, true);
+  dlio::declare_param(this, "publish/tf", this->publish_tf_, true);
 
   // Frames
   dlio::declare_param(this, "frames/odom", this->odom_frame, "odom");
@@ -383,7 +399,9 @@ void dlio::OdomNode::publishPose() {
   this->odom_ros.twist.twist.angular.y = this->state.v.ang.b[1];
   this->odom_ros.twist.twist.angular.z = this->state.v.ang.b[2];
 
-  this->odom_pub->publish(this->odom_ros);
+  if (this->publish_odom_) {
+    this->odom_pub->publish(this->odom_ros);
+  }
 
   // geometry_msgs::msg::PoseStamped
   this->pose_ros.header.stamp = this->imu_stamp;
@@ -398,30 +416,41 @@ void dlio::OdomNode::publishPose() {
   this->pose_ros.pose.orientation.y = this->state.q.y();
   this->pose_ros.pose.orientation.z = this->state.q.z();
 
-  this->pose_pub->publish(this->pose_ros);
+  if (this->publish_pose_) {
+    this->pose_pub->publish(this->pose_ros);
+  }
 
 }
 
 void dlio::OdomNode::publishToROS(pcl::PointCloud<PointType>::ConstPtr published_cloud, Eigen::Matrix4f T_cloud) {
+  if (this->event_driven_odometry_) {
+    this->publishPose();
+  }
   this->publishCloud(published_cloud, T_cloud);
 
   // nav_msgs::msg::Path
-  this->path_ros.header.stamp = this->imu_stamp;
-  this->path_ros.header.frame_id = this->odom_frame;
+  if (this->publish_path_) {
+    this->path_ros.header.stamp = this->imu_stamp;
+    this->path_ros.header.frame_id = this->odom_frame;
 
-  geometry_msgs::msg::PoseStamped p;
-  p.header.stamp = this->imu_stamp;
-  p.header.frame_id = this->odom_frame;
-  p.pose.position.x = this->state.p[0];
-  p.pose.position.y = this->state.p[1];
-  p.pose.position.z = this->state.p[2];
-  p.pose.orientation.w = this->state.q.w();
-  p.pose.orientation.x = this->state.q.x();
-  p.pose.orientation.y = this->state.q.y();
-  p.pose.orientation.z = this->state.q.z();
+    geometry_msgs::msg::PoseStamped p;
+    p.header.stamp = this->imu_stamp;
+    p.header.frame_id = this->odom_frame;
+    p.pose.position.x = this->state.p[0];
+    p.pose.position.y = this->state.p[1];
+    p.pose.position.z = this->state.p[2];
+    p.pose.orientation.w = this->state.q.w();
+    p.pose.orientation.x = this->state.q.x();
+    p.pose.orientation.y = this->state.q.y();
+    p.pose.orientation.z = this->state.q.z();
 
-  this->path_ros.poses.push_back(p);
-  this->path_pub->publish(this->path_ros);
+    this->path_ros.poses.push_back(p);
+    this->path_pub->publish(this->path_ros);
+  }
+
+  if (!this->publish_tf_) {
+    return;
+  }
 
   // transform: odom to baselink
   geometry_msgs::msg::TransformStamped transformStamped;
@@ -479,6 +508,10 @@ void dlio::OdomNode::publishToROS(pcl::PointCloud<PointType>::ConstPtr published
 
 void dlio::OdomNode::publishCloud(pcl::PointCloud<PointType>::ConstPtr published_cloud, Eigen::Matrix4f T_cloud) {
 
+  if (!this->publish_deskewed_) {
+    return;
+  }
+
   if (this->wait_until_move_) {
     if (this->length_traversed < 0.1) { return; }
   }
@@ -497,6 +530,10 @@ void dlio::OdomNode::publishCloud(pcl::PointCloud<PointType>::ConstPtr published
 }
 
 void dlio::OdomNode::publishKeyframe(std::pair<std::pair<Eigen::Vector3f, Eigen::Quaternionf>, pcl::PointCloud<PointType>::ConstPtr> kf, rclcpp::Time timestamp) {
+
+  if (!this->publish_keyframes_) {
+    return;
+  }
 
   // Push back
   geometry_msgs::msg::Pose p;

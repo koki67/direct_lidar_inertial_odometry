@@ -84,7 +84,9 @@ install( TARGETS dlio_odom_node dlio_map_node
          DESTINATION lib/${PROJECT_NAME} 
 )
 install( DIRECTORY cfg launch
-         DESTINATION share/${PROJECT_NAME} 
+         DESTINATION share/${PROJECT_NAME}
+         PATTERN "__pycache__" EXCLUDE
+         PATTERN "*.pyc" EXCLUDE
 )
 
 add_compile_options(-std=c++14)
