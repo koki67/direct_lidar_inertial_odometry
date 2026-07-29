@@ -14,6 +14,7 @@
 
 // ROS
 #include "rclcpp/rclcpp.hpp"
+#include "direct_lidar_inertial_odometry/srv/replay_status.hpp"
 #include "direct_lidar_inertial_odometry/srv/reset_map.hpp"
 #include <nav_msgs/msg/odometry.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -63,6 +64,9 @@ private:
 
   void resetMap(std::shared_ptr<direct_lidar_inertial_odometry::srv::ResetMap::Request> req,
                 std::shared_ptr<direct_lidar_inertial_odometry::srv::ResetMap::Response> res);
+  void replayStatus(
+      std::shared_ptr<direct_lidar_inertial_odometry::srv::ReplayStatus::Request> req,
+      std::shared_ptr<direct_lidar_inertial_odometry::srv::ReplayStatus::Response> res);
 
   void publishToROS(pcl::PointCloud<PointType>::ConstPtr published_cloud, Eigen::Matrix4f T_cloud);
   void publishCloud(pcl::PointCloud<PointType>::ConstPtr published_cloud, Eigen::Matrix4f T_cloud);
@@ -133,6 +137,8 @@ private:
 
   // Services
   rclcpp::Service<direct_lidar_inertial_odometry::srv::ResetMap>::SharedPtr reset_srv;
+  rclcpp::Service<direct_lidar_inertial_odometry::srv::ReplayStatus>::SharedPtr replay_status_srv;
+  rclcpp::CallbackGroup::SharedPtr replay_status_cb_group;
 
   // ROS Msgs
   nav_msgs::msg::Odometry odom_ros;
@@ -150,7 +156,10 @@ private:
   std::atomic<bool> deskew_status;
   std::atomic<int> deskew_size;
   std::atomic<unsigned long long> replay_imu_received;
+  std::atomic<unsigned long long> replay_imu_completed;
   std::atomic<unsigned long long> replay_pointcloud_received;
+  std::atomic<unsigned long long> replay_pointcloud_completed;
+  std::atomic<unsigned long long> replay_pointcloud_published;
   double replay_first_imu_stamp;
   double replay_last_imu_stamp;
   double replay_first_pointcloud_stamp;

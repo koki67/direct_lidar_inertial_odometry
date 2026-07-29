@@ -1,0 +1,8 @@
+---
+bool offline_replay
+uint64 imu_received
+uint64 imu_completed
+uint64 pointcloud_received
+uint64 pointcloud_completed
+uint64 imu_published
+uint64 pointcloud_published

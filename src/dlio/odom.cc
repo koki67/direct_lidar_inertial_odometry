@@ -18,6 +18,29 @@
 
 #include "rclcpp/qos.hpp"
 
+namespace {
+
+class ReplayCompletionGuard {
+public:
+  ReplayCompletionGuard(
+      bool enabled, std::atomic<unsigned long long>& completed)
+    : completed_(enabled ? &completed : nullptr) {}
+
+  ~ReplayCompletionGuard() {
+    if (this->completed_ != nullptr) {
+      this->completed_->fetch_add(1);
+    }
+  }
+
+  ReplayCompletionGuard(const ReplayCompletionGuard&) = delete;
+  ReplayCompletionGuard& operator=(const ReplayCompletionGuard&) = delete;
+
+private:
+  std::atomic<unsigned long long>* completed_;
+};
+
+}  // namespace
+
 dlio::OdomNode::OdomNode() : Node("dlio_odom_node") {
 
   this->getParams();
@@ -32,7 +55,10 @@ dlio::OdomNode::OdomNode() : Node("dlio_odom_node") {
   this->deskew_status = false;
   this->deskew_size = 0;
   this->replay_imu_received = 0;
+  this->replay_imu_completed = 0;
   this->replay_pointcloud_received = 0;
+  this->replay_pointcloud_completed = 0;
+  this->replay_pointcloud_published = 0;
   this->replay_first_imu_stamp = 0.;
   this->replay_last_imu_stamp = 0.;
   this->replay_first_pointcloud_stamp = 0.;
@@ -65,12 +91,17 @@ dlio::OdomNode::OdomNode() : Node("dlio_odom_node") {
   this->imu_sub = this->create_subscription<sensor_msgs::msg::Imu>("imu", imu_qos,
       std::bind(&dlio::OdomNode::callbackImu, this, std::placeholders::_1), imu_sub_opt);
 
-  this->odom_pub     = this->create_publisher<nav_msgs::msg::Odometry>("odom", 1);
-  this->pose_pub     = this->create_publisher<geometry_msgs::msg::PoseStamped>("pose", 1);
-  this->path_pub     = this->create_publisher<nav_msgs::msg::Path>("path", 1);
-  this->kf_pose_pub  = this->create_publisher<geometry_msgs::msg::PoseArray>("kf_pose", 1);
-  this->kf_cloud_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("kf_cloud", 1);
-  this->deskewed_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("deskewed", 1);
+  auto output_qos = rclcpp::QoS(rclcpp::KeepLast(1));
+  if (this->offline_replay_) {
+    output_qos.keep_all();
+    output_qos.reliable();
+  }
+  this->odom_pub     = this->create_publisher<nav_msgs::msg::Odometry>("odom", output_qos);
+  this->pose_pub     = this->create_publisher<geometry_msgs::msg::PoseStamped>("pose", output_qos);
+  this->path_pub     = this->create_publisher<nav_msgs::msg::Path>("path", output_qos);
+  this->kf_pose_pub  = this->create_publisher<geometry_msgs::msg::PoseArray>("kf_pose", output_qos);
+  this->kf_cloud_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("kf_cloud", output_qos);
+  this->deskewed_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("deskewed", output_qos);
 
   if (this->publish_tf_) {
     this->br = std::make_shared<tf2_ros::TransformBroadcaster>(*this);
@@ -88,6 +119,17 @@ dlio::OdomNode::OdomNode() : Node("dlio_odom_node") {
       std::bind(&dlio::OdomNode::resetMap, this, std::placeholders::_1, std::placeholders::_2),
       rmw_qos_profile_services_default,
       reset_cb_group);
+
+  this->replay_status_cb_group =
+    this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  this->replay_status_srv =
+    this->create_service<direct_lidar_inertial_odometry::srv::ReplayStatus>(
+      "~/replay_status",
+      std::bind(
+        &dlio::OdomNode::replayStatus, this,
+        std::placeholders::_1, std::placeholders::_2),
+      rmw_qos_profile_services_default,
+      this->replay_status_cb_group);
 
   this->T = Eigen::Matrix4f::Identity();
   this->T_prior = Eigen::Matrix4f::Identity();
@@ -216,9 +258,12 @@ dlio::OdomNode::~OdomNode() {
 
   std::cout << std::endl << " D-LIO replay input summary:" << std::endl;
   std::cout << "  IMU received: " << this->replay_imu_received
+            << ", completed: " << this->replay_imu_completed
             << " (first: " << this->replay_first_imu_stamp
             << ", last: " << this->replay_last_imu_stamp << ")" << std::endl;
   std::cout << "  Point clouds received: " << this->replay_pointcloud_received
+            << ", completed: " << this->replay_pointcloud_completed
+            << ", published: " << this->replay_pointcloud_published
             << " (first: " << this->replay_first_pointcloud_stamp
             << ", last: " << this->replay_last_pointcloud_stamp << ")" << std::endl;
 }
@@ -856,6 +901,8 @@ void dlio::OdomNode::callbackPointCloud(const sensor_msgs::msg::PointCloud2::Sha
     }
     this->replay_last_pointcloud_stamp = pointcloud_stamp;
   }
+  ReplayCompletionGuard completion_guard(
+    this->offline_replay_, this->replay_pointcloud_completed);
 
   if (this->first_scan_stamp == 0.) {
     this->first_scan_stamp = pointcloud_stamp;
@@ -940,8 +987,14 @@ void dlio::OdomNode::callbackPointCloud(const sensor_msgs::msg::PointCloud2::Sha
   } else {
     published_cloud = this->deskewed_scan;
   }
-  this->publish_thread = std::thread( &dlio::OdomNode::publishToROS, this, published_cloud, this->T_corr );
-  this->publish_thread.detach();
+  if (this->offline_replay_) {
+    this->publishToROS(published_cloud, this->T_corr);
+    this->replay_pointcloud_published.fetch_add(1);
+  } else {
+    this->publish_thread = std::thread(
+      &dlio::OdomNode::publishToROS, this, published_cloud, this->T_corr);
+    this->publish_thread.detach();
+  }
 
   // Update some statistics
   this->comp_times.push_back(this->now().seconds() - then);
@@ -971,6 +1024,8 @@ void dlio::OdomNode::callbackImu(const sensor_msgs::msg::Imu::SharedPtr imu_raw)
     }
     this->replay_last_imu_stamp = imu_stamp_secs;
   }
+  ReplayCompletionGuard completion_guard(
+    this->offline_replay_, this->replay_imu_completed);
 
   Eigen::Vector3f lin_accel;
   Eigen::Vector3f ang_vel;
@@ -1108,6 +1163,18 @@ void dlio::OdomNode::callbackImu(const sensor_msgs::msg::Imu::SharedPtr imu_raw)
 
   }
 
+}
+
+void dlio::OdomNode::replayStatus(
+    std::shared_ptr<direct_lidar_inertial_odometry::srv::ReplayStatus::Request>,
+    std::shared_ptr<direct_lidar_inertial_odometry::srv::ReplayStatus::Response> res) {
+  res->offline_replay = this->offline_replay_;
+  res->imu_received = this->replay_imu_received.load();
+  res->imu_completed = this->replay_imu_completed.load();
+  res->pointcloud_received = this->replay_pointcloud_received.load();
+  res->pointcloud_completed = this->replay_pointcloud_completed.load();
+  res->imu_published = 0;
+  res->pointcloud_published = this->replay_pointcloud_published.load();
 }
 
 void dlio::OdomNode::getNextPose() {
@@ -1989,7 +2056,10 @@ void dlio::OdomNode::reset() {
 
   if (this->offline_replay_) {
     this->replay_imu_received = 0;
+    this->replay_imu_completed = 0;
     this->replay_pointcloud_received = 0;
+    this->replay_pointcloud_completed = 0;
+    this->replay_pointcloud_published = 0;
     this->replay_first_imu_stamp = 0.;
     this->replay_last_imu_stamp = 0.;
     this->replay_first_pointcloud_stamp = 0.;
