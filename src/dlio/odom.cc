@@ -41,7 +41,15 @@ dlio::OdomNode::OdomNode() : Node("dlio_odom_node") {
   this->lidar_cb_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
   auto lidar_sub_opt = rclcpp::SubscriptionOptions();
   lidar_sub_opt.callback_group = this->lidar_cb_group;
-  this->lidar_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>("pointcloud", 5,
+  auto lidar_qos = rclcpp::QoS(rclcpp::KeepLast(5));
+  if (this->offline_replay_) {
+    // Offline processing can fall behind playback as the map grows. Keep all
+    // scans so the estimator sees a continuous, ordered input instead of the
+    // newest five samples only.
+    lidar_qos.keep_all();
+    lidar_qos.reliable();
+  }
+  this->lidar_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>("pointcloud", lidar_qos,
       std::bind(&dlio::OdomNode::callbackPointCloud, this, std::placeholders::_1), lidar_sub_opt);
 
   this->imu_cb_group = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
@@ -49,9 +57,9 @@ dlio::OdomNode::OdomNode() : Node("dlio_odom_node") {
   imu_sub_opt.callback_group = this->imu_cb_group;
   auto imu_qos = rclcpp::SensorDataQoS();
   if (this->offline_replay_) {
-    // The recorded raw inputs are reliable. Preserve that delivery contract
-    // during offline replay after the player/D-LIO startup barrier.
-    imu_qos.keep_last(1000);
+    // Match the LiDAR KEEP_ALL contract. The configured circular IMU buffer
+    // remains the explicit memory bound for measurements used by deskewing.
+    imu_qos.keep_all();
     imu_qos.reliable();
   }
   this->imu_sub = this->create_subscription<sensor_msgs::msg::Imu>("imu", imu_qos,
@@ -719,7 +727,7 @@ void dlio::OdomNode::deskewPointcloud() {
                         boost::range::index_value<PointType&, long> p2)
       { return p1.value().timestamp != p2.value().timestamp; };
     extract_point_time = [&sweep_ref_time](boost::range::index_value<PointType&, long> pt)
-      { return pt.value().timestamp * 1e-9f; };
+      { return pt.value().timestamp * 1e-9; };
   }
 
   // copy points into deskewed_scan_ in order of timestamp
